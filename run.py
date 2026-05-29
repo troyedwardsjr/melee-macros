@@ -164,26 +164,30 @@ def cmd_run(args) -> int:
     if unknown:
         print(f"warning: triggers reference unknown macros: {unknown}", file=sys.stderr)
 
-    backend = cfg.build_backend()
     reader = ControllerReader(cfg.controller)
 
     def on_event(kind, payload):
         if kind == "ready":
             print(f"[ready] controller: {payload}. {len(cfg.triggers)} triggers bound.")
         elif kind == "waiting":
-            if cfg.backend == "pipe":
+            if cfg.backend in ("pipe", "hybrid"):
                 print(
                     "[waiting] open Dolphin (Slippi Launcher) and set Port 1 to the "
                     "Pipe device, then it will connect. The input window is already open."
                 )
         elif kind == "connected":
             print("[connected] Dolphin is reading the pipe. Ctrl-C to stop.")
+            if cfg.backend == "hybrid":
+                print("[hybrid] attempting read-only state mirror in the background…")
         elif kind == "macro_start":
             print(f"[macro] {payload}")
         elif kind == "debug":
             print(f"[dbg] {payload}")
         elif kind == "stop":
             print("[stop]")
+
+    # Pass on_event so the hybrid backend can report state-mirror status.
+    backend = cfg.build_backend(on_event=on_event)
 
     Engine(
         backend, reader, lib, cfg.triggers,

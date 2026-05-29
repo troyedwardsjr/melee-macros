@@ -10,7 +10,10 @@
 # Detected on this machine: the Slippi Launcher netplay Dolphin user dir.
 pipe_path: "~/Library/Application Support/com.project-slippi.dolphin/netplay/User/Pipes/slippibot"
 fps: 60
-backend: libmelee       # "pipe" (wall-clock) or "libmelee" (frame-accurate)
+backend: hybrid         # "pipe" (you launch Dolphin, no state), "hybrid" (you
+                        #  launch Dolphin + read-only state mirror for reactive
+                        #  macros/auto-edgeguard), or "libmelee" (tool launches
+                        #  Dolphin, frame-accurate). hybrid reuses libmelee.dolphin_path.
 passthrough: true       # forward physical inputs when no macro is active
 
 # --- closed-loop / state reading --------------------------------------------

@@ -13,11 +13,20 @@ Two backends:
   frame at a time. ``wait_frame`` blocks until the next gamestate arrives, so
   every macro frame lands on exactly one game frame (frame-accurate). Requires
   a running Slippi Dolphin + ISO and the optional ``melee`` dependency.
+
+* :class:`HybridBackend` — sends inputs through the pipe (so YOU launch Dolphin
+  from the Slippi Launcher, exactly like ``PipeBackend``), but also spins up a
+  read-only libmelee connection in a background thread to mirror live game
+  state. That gives closed-loop macros and auto-edgeguard their ``GameView``
+  without libmelee launching the game. If the read connection can't be made (or
+  drops), output is unaffected — ``gamestate()`` just returns ``None`` and
+  macros fall back to fixed timing.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 import time
 from typing import Protocol
 
@@ -144,3 +153,102 @@ class LibmeleeBackend:
     def close(self) -> None:
         if self._console is not None:
             self._console.stop()
+
+
+class HybridBackend:
+    """Pipe output + read-only libmelee state mirror (background thread).
+
+    Output and pacing are identical to :class:`PipeBackend` (you launch Dolphin
+    yourself and point Port 1 at the pipe). A daemon thread separately connects
+    a libmelee ``Console`` in read-only mode to the SAME running Dolphin and
+    keeps the latest :class:`GameView` available via :meth:`gamestate`.
+
+    The reader is best-effort and fully decoupled: if libmelee isn't installed,
+    can't connect, or the connection drops, the input path keeps working and
+    ``gamestate()`` returns ``None`` (macros use fixed timing).
+    """
+
+    def __init__(
+        self,
+        pipe_path: str,
+        *,
+        dolphin_path: str,
+        port: int = 1,
+        fps: float = 60.0,
+        on_event=None,
+    ):
+        self.pipe = DolphinPipe(pipe_path, create=True)
+        self.clock = _Clock(fps)
+        self.dolphin_path = os.path.expanduser(os.path.expandvars(dolphin_path))
+        self.port = port
+        self._on_event = on_event or (lambda *a: None)
+        self._latest: GameView | None = None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._connected = False
+
+    def open(self) -> None:
+        # Output first (blocks until Dolphin opens the pipe — same as pipe mode).
+        self.pipe.open()
+        # Start the read-only state mirror in the background.
+        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._thread.start()
+
+    def _reader_loop(self) -> None:
+        try:
+            import melee  # lazy/optional
+        except ImportError:
+            self._on_event("debug", "hybrid: melee not installed; state mirror off")
+            return
+        try:
+            console = melee.Console(path=self.dolphin_path, copy_home_directory=False)
+        except Exception as e:  # noqa: BLE001 - never let the reader kill the engine
+            self._on_event("debug", f"hybrid: Console init failed: {e}")
+            return
+        # connect() (no run()) attaches to the ALREADY-running Dolphin.
+        try:
+            ok = console.connect()
+        except Exception as e:  # noqa: BLE001
+            self._on_event("debug", f"hybrid: connect() raised: {e}")
+            return
+        if not ok:
+            self._on_event(
+                "debug",
+                "hybrid: could not connect to running Dolphin for state "
+                "(inputs still work; macros use fixed timing).",
+            )
+            return
+        self._connected = True
+        self._on_event("debug", "hybrid: state mirror connected.")
+        try:
+            while not self._stop.is_set():
+                gs = console.step()  # blocks ~one frame; None if the link drops
+                if gs is None:
+                    continue
+                view = from_libmelee(gs, self.port)
+                with self._lock:
+                    self._latest = view
+        except Exception as e:  # noqa: BLE001
+            self._on_event("debug", f"hybrid: reader stopped: {e}")
+        finally:
+            try:
+                console.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def wait_frame(self) -> None:
+        self.clock.tick()
+
+    def gamestate(self) -> GameView | None:
+        with self._lock:
+            return self._latest
+
+    def send(self, state: ControllerState) -> None:
+        self.pipe.send(state)
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self.pipe.close()

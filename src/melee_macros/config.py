@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .backends import Backend, LibmeleeBackend, PipeBackend
+from .backends import Backend, HybridBackend, LibmeleeBackend, PipeBackend
 from .controller import ControllerMap
 from .engine import TriggerBinding
 from .pipe import default_pipe_path
@@ -16,7 +16,7 @@ from .pipe import default_pipe_path
 class AppConfig:
     pipe_path: str
     fps: float
-    backend: str  # "pipe" or "libmelee"
+    backend: str  # "pipe", "hybrid", or "libmelee"
     controller: ControllerMap
     triggers: list[TriggerBinding]
     passthrough: bool = True
@@ -24,12 +24,20 @@ class AppConfig:
     reactive: bool = True            # prefer closed-loop macros when state is available
     reactive_edgeguard: bool = False  # allow opponent-reading auto edgeguard (autopilot)
 
-    def build_backend(self) -> Backend:
+    def build_backend(self, on_event=None) -> Backend:
         if self.backend == "libmelee":
             return LibmeleeBackend(
                 dolphin_path=self.libmelee["dolphin_path"],
                 iso_path=self.libmelee["iso_path"],
                 port=self.libmelee.get("port", 1),
+            )
+        if self.backend == "hybrid":
+            return HybridBackend(
+                self.pipe_path,
+                dolphin_path=self.libmelee["dolphin_path"],
+                port=self.libmelee.get("port", 1),
+                fps=self.fps,
+                on_event=on_event,
             )
         return PipeBackend(self.pipe_path, fps=self.fps)
 
