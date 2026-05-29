@@ -74,6 +74,12 @@ def cmd_probe(args) -> int:
     import time
 
     sys.stdout.reconfigure(line_buffering=True)  # print live even when redirected
+    # Enable SDL's GameCube-adapter HIDAPI driver (Wii U mode). Must be set
+    # before pygame/SDL initializes its joystick subsystem.
+    import os
+
+    os.environ.setdefault("SDL_JOYSTICK_HIDAPI", "1")
+    os.environ.setdefault("SDL_JOYSTICK_HIDAPI_GAMECUBE", "1")
     try:
         import pygame
     except ImportError:
@@ -90,6 +96,13 @@ def cmd_probe(args) -> int:
     except pygame.error as e:
         print(f"(could not open a window: {e}; input may not register)", file=sys.stderr)
     pygame.joystick.init()
+    # macOS/IOKit only populates the joystick list after the Cocoa event loop
+    # has been pumped a few times; polling immediately after init() returns 0
+    # even with a pad plugged in. Pump briefly until a device appears.
+    deadline = time.monotonic() + 2.0
+    while pygame.joystick.get_count() == 0 and time.monotonic() < deadline:
+        pygame.event.get()
+        time.sleep(1 / 120)
     n = pygame.joystick.get_count()
     if n == 0:
         print("No SDL controller detected. Plug it in and try again.", file=sys.stderr)

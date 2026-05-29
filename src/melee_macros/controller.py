@@ -88,6 +88,13 @@ class ControllerReader:
         self._pygame = None
 
     def open(self) -> None:
+        # SDL's dedicated HIDAPI driver for the Nintendo/Mayflash GameCube
+        # adapter (used in "Wii U" mode, where the adapter reports a real
+        # GameCube HID descriptor). Without it, the adapter's "PC/DInput" mode
+        # enumerates on macOS with 0 axes/0 buttons. Must be set before init.
+        os.environ.setdefault("SDL_JOYSTICK_HIDAPI", "1")
+        os.environ.setdefault("SDL_JOYSTICK_HIDAPI_GAMECUBE", "1")
+
         import pygame  # lazy: optional dependency
 
         self._pygame = pygame
@@ -102,6 +109,16 @@ class ControllerReader:
         except pygame.error:
             pass
         pygame.joystick.init()
+        # macOS/IOKit only populates the joystick list AFTER the Cocoa event
+        # loop has been pumped a few times; calling get_count() immediately
+        # after init() returns 0 even with a pad plugged in. Pump briefly until
+        # a device appears (or give up after ~2s).
+        import time
+
+        deadline = time.monotonic() + 2.0
+        while pygame.joystick.get_count() == 0 and time.monotonic() < deadline:
+            pygame.event.get()
+            time.sleep(1 / 120)
         if pygame.joystick.get_count() == 0:
             raise RuntimeError("no SDL joystick/controller detected")
         self._js = pygame.joystick.Joystick(self.map.index)
