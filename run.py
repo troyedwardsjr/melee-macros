@@ -108,59 +108,67 @@ def cmd_probe(args) -> int:
         print("No SDL controller detected. Plug it in and try again.", file=sys.stderr)
         return 1
 
-    print(f"Detected {n} controller(s):")
+    # Open and report EVERY detected device. A 4-port adapter (Mayflash) shows
+    # up as 4 separate joysticks; an empty port reports 0 axes/0 buttons while
+    # the port with a controller plugged in reports the real descriptor. So we
+    # watch them all and tag each event with its joystick index — whichever
+    # index lights up when you move the stick is the one to put in config.yaml.
+    sticks = []
     for i in range(n):
         js = pygame.joystick.Joystick(i)
         js.init()
-        print(f"  index {i}: {js.get_name()}")
+        sticks.append(js)
 
-    js = pygame.joystick.Joystick(args.index)
-    js.init()
+    # Pump a moment so capabilities settle, then print per-device caps.
+    for _ in range(60):
+        pygame.event.get()
+        time.sleep(1 / 120)
+    print(f"Detected {n} device(s):")
+    for i, js in enumerate(sticks):
+        rest = [round(js.get_axis(a), 2) for a in range(js.get_numaxes())]
+        print(
+            f"  index {i}: {js.get_name()} — "
+            f"{js.get_numaxes()} axes, {js.get_numbuttons()} buttons, {js.get_numhats()} hats"
+            + (f"  rest={rest}" if rest else "")
+        )
     print(
-        f"\nProbing index {args.index}: {js.get_name()} "
-        f"({js.get_numaxes()} axes, {js.get_numbuttons()} buttons, {js.get_numhats()} hats)."
+        "\nNow move the stick / press buttons on your GameCube controller. Every\n"
+        "change prints below, tagged with [index]. The index that responds is the\n"
+        "one to set as controller.index in config.yaml. Ctrl-C to stop.\n"
     )
-    print("Press EACH button/trigger one at a time; every change prints below.")
-    print("(L/R triggers usually show up as an AXIS, not a button.) Ctrl-C to stop.\n")
 
-    n_axes = js.get_numaxes()
-    n_btns = js.get_numbuttons()
-    n_hats = js.get_numhats()
-
-    # Show resting axis values so analog triggers (often rest at -1.0) are obvious.
-    rest = [js.get_axis(a) for a in range(n_axes)]
-    pygame.event.get()
-    rest = [round(js.get_axis(a), 2) for a in range(n_axes)]
-    print(f"axis rest values: {{{', '.join(f'{a}:{v:+.2f}' for a, v in enumerate(rest))}}}\n")
-
-    last_btns: set[int] = set()
-    last_axes: dict[int, float] = {a: rest[a] for a in range(n_axes)}
-    last_hats: dict[int, tuple] = {h: (0, 0) for h in range(n_hats)}
+    last_btns: dict[int, set[int]] = {i: set() for i in range(n)}
+    last_axes: dict[int, dict[int, float]] = {
+        i: {a: js.get_axis(a) for a in range(js.get_numaxes())} for i, js in enumerate(sticks)
+    }
+    last_hats: dict[int, dict[int, tuple]] = {
+        i: {h: (0, 0) for h in range(js.get_numhats())} for i, js in enumerate(sticks)
+    }
     try:
         while True:
             # On macOS, controller state only updates when the Cocoa event queue
-            # is drained via event.get() (pump() alone is not enough with a real window).
+            # is drained via event.get() (pump() alone is not enough with a window).
             pygame.event.get()
-            btns = {i for i in range(n_btns) if js.get_button(i)}
-            if btns != last_btns:
-                down = sorted(btns - last_btns)
-                up = sorted(last_btns - btns)
-                if down:
-                    print(f"button DOWN {down}    (all held: {sorted(btns) or '-'})")
-                if up:
-                    print(f"button UP   {up}")
-                last_btns = btns
-            for a in range(n_axes):
-                v = js.get_axis(a)
-                # No zero-gate: catch analog triggers moving between -1 and +1 too.
-                if abs(v - last_axes[a]) > 0.12:
-                    print(f"axis {a}: {v:+.2f}")
-                    last_axes[a] = v
-            for h in range(n_hats):
-                hv = js.get_hat(h)
-                if hv != last_hats[h]:
-                    print(f"hat {h} (D-pad): {hv}")
-                    last_hats[h] = hv
+            for i, js in enumerate(sticks):
+                btns = {b for b in range(js.get_numbuttons()) if js.get_button(b)}
+                if btns != last_btns[i]:
+                    down = sorted(btns - last_btns[i])
+                    up = sorted(last_btns[i] - btns)
+                    if down:
+                        print(f"[{i}] button DOWN {down}    (all held: {sorted(btns) or '-'})")
+                    if up:
+                        print(f"[{i}] button UP   {up}")
+                    last_btns[i] = btns
+                for a in range(js.get_numaxes()):
+                    v = js.get_axis(a)
+                    if abs(v - last_axes[i][a]) > 0.12:
+                        print(f"[{i}] axis {a}: {v:+.2f}")
+                        last_axes[i][a] = v
+                for h in range(js.get_numhats()):
+                    hv = js.get_hat(h)
+                    if hv != last_hats[i][h]:
+                        print(f"[{i}] hat {h} (D-pad): {hv}")
+                        last_hats[i][h] = hv
             time.sleep(1 / 60)
     except KeyboardInterrupt:
         print("\n[stop]")
@@ -168,7 +176,7 @@ def cmd_probe(args) -> int:
 
 
 def cmd_run(args) -> int:
-    from melee_macros.controller import ControllerReader
+    from melee_macros.controller import ControllerReader, HidGcReader
     from melee_macros.engine import Engine
 
     cfg = load_config(args.config or default_config_path())
@@ -177,7 +185,12 @@ def cmd_run(args) -> int:
     if unknown:
         print(f"warning: triggers reference unknown macros: {unknown}", file=sys.stderr)
 
-    reader = ControllerReader(cfg.controller)
+    # "hid_gc" reads the Mayflash GameCube adapter directly (SDL can't on macOS);
+    # everything else goes through the SDL/pygame reader.
+    if cfg.controller.driver == "hid_gc":
+        reader = HidGcReader(cfg.controller)
+    else:
+        reader = ControllerReader(cfg.controller)
 
     def on_event(kind, payload):
         if kind == "ready":

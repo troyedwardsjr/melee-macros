@@ -20,7 +20,11 @@ from dataclasses import dataclass, field
 class ControllerMap:
     index: int = 0
     deadzone: float = 0.15
-    # SDL axis index -> role
+    # Which reader to use: "sdl" (pygame; most pads) or "hid_gc" (raw HID for
+    # the Mayflash GameCube adapter, which SDL can't parse on macOS).
+    driver: str = "sdl"
+    # For driver "sdl": SDL axis index -> role.
+    # For driver "hid_gc": HID report BYTE index -> role.
     axes: dict[str, int] = field(
         default_factory=lambda: {
             "main_x": 0,
@@ -31,14 +35,20 @@ class ControllerMap:
             "r_trigger": 5,
         }
     )
-    # SDL button index -> logical name
-    buttons: dict[int, str] = field(default_factory=dict)
+    # For driver "sdl": SDL button index (int) -> logical name.
+    # For driver "hid_gc": "byte.bit" string -> logical name.
+    buttons: dict = field(default_factory=dict)
     # invert per-axis if a pad reports flipped values
     invert: dict[str, bool] = field(
         default_factory=lambda: {"main_y": True, "c_y": True}
     )
     trigger_min: float = -1.0  # SDL value at rest for trigger axes
     trigger_max: float = 1.0  # SDL value fully pressed
+    # --- driver "hid_gc" only ---
+    hid_vendor: int = 0x0079   # DragonRise / Mayflash adapter (PC mode)
+    hid_product: int = 0       # 0 = any product for that vendor
+    hid_interface: int = 0     # which adapter PORT (interface_number) to read
+    hat_byte: int = 8          # report byte holding the D-pad hat nibble
 
 
 @dataclass
@@ -189,3 +199,142 @@ class ControllerReader:
         if self._pygame is not None:
             self._pygame.joystick.quit()
             self._pygame.quit()
+
+
+# Standard HID 8-way hat: nibble -> (dx, dy) with y+ = up. 8 = neutral.
+_HAT_DIRS = {
+    0: (0, 1),    # up
+    1: (1, 1),    # up-right
+    2: (1, 0),    # right
+    3: (1, -1),   # down-right
+    4: (0, -1),   # down
+    5: (-1, -1),  # down-left
+    6: (-1, 0),   # left
+    7: (-1, 1),   # up-left
+    8: (0, 0),    # neutral
+}
+
+
+class HidGcReader:
+    """Raw-HID reader for the Mayflash GameCube adapter (PC/DInput mode).
+
+    SDL/pygame cannot parse this adapter on macOS (it enumerates with 0 axes /
+    0 buttons), so we open the chosen adapter PORT directly via hidapi and decode
+    its 9-byte report ourselves. Mapping (byte indices, button byte.bit, invert)
+    comes from config; defaults match a calibrated Mayflash unit.
+
+    Report layout (per port, rest = ``00 00 80 80 80 80 00 00 08``):
+      byte 0/1  digital button bitfields
+      byte 2..5 stick axes (rest 0x80)
+      byte 6/7  analog L/R triggers (rest 0x00)
+      byte 8    low nibble = D-pad hat (8 = neutral)
+    """
+
+    def __init__(self, mapping: ControllerMap):
+        self.map = mapping
+        self._dev = None
+        self._last = bytes(9)
+        # Pre-parse "byte.bit" -> logical name into (byte, mask, name) tuples.
+        self._btns: list[tuple[int, int, str]] = []
+        for key, name in (self.map.buttons or {}).items():
+            byte_s, _, bit_s = str(key).partition(".")
+            self._btns.append((int(byte_s), 1 << int(bit_s), name))
+
+    def open(self) -> None:
+        import hid  # lazy: optional dependency
+
+        target = None
+        for d in hid.enumerate():
+            if d.get("vendor_id") != self.map.hid_vendor:
+                continue
+            if self.map.hid_product and d.get("product_id") != self.map.hid_product:
+                continue
+            if d.get("interface_number") != self.map.hid_interface:
+                continue
+            target = d
+            break
+        if target is None:
+            raise RuntimeError(
+                f"no HID device vendor=0x{self.map.hid_vendor:04x} "
+                f"interface={self.map.hid_interface} found "
+                "(is the adapter plugged in and Steam quit?)"
+            )
+        self._dev = hid.device()
+        self._dev.open_path(target["path"])
+        self._dev.set_nonblocking(True)
+        self._name = target.get("product_string") or "GameCube adapter"
+
+    @property
+    def name(self) -> str:
+        return getattr(self, "_name", "<none>")
+
+    def _refresh(self) -> bytes:
+        """Drain pending HID reports; keep the most recent full one."""
+        if self._dev is None:
+            raise RuntimeError("controller not open")
+        for _ in range(32):
+            data = self._dev.read(64)
+            if not data:
+                break
+            if len(data) >= 9:
+                self._last = bytes(data)
+        return self._last
+
+    def _axis_pipe(self, role: str) -> float:
+        byte = self.map.axes.get(role)
+        if byte is None or byte >= len(self._last):
+            return 0.5
+        n = (self._last[byte] - 128) / 127.0  # -> [-1, 1], stick center 0x80
+        return _axis_to_pipe(n, self.map.invert.get(role, False), self.map.deadzone)
+
+    def poll(self) -> PhysicalState:
+        rep = self._refresh()
+
+        main = (self._axis_pipe("main_x"), self._axis_pipe("main_y"))
+        c = (self._axis_pipe("c_x"), self._axis_pipe("c_y"))
+
+        def trig(role: str) -> float:
+            byte = self.map.axes.get(role)
+            if byte is None or byte >= len(rep):
+                return 0.0
+            return max(0.0, min(1.0, rep[byte] / 255.0))  # rest 0x00 -> 0
+
+        pressed: set[str] = set()
+        for byte, mask, name in self._btns:
+            if byte < len(rep) and (rep[byte] & mask):
+                pressed.add(name)
+
+        # D-pad via the hat nibble.
+        if self.map.hat_byte < len(rep):
+            dx, dy = _HAT_DIRS.get(rep[self.map.hat_byte] & 0x0F, (0, 0))
+            if dx < 0:
+                pressed.add("D_LEFT")
+            elif dx > 0:
+                pressed.add("D_RIGHT")
+            if dy > 0:
+                pressed.add("D_UP")
+            elif dy < 0:
+                pressed.add("D_DOWN")
+
+        return PhysicalState(
+            buttons=frozenset(pressed), main=main, c=c, l=trig("l_trigger"), r=trig("r_trigger")
+        )
+
+    def raw_buttons(self) -> list[int]:
+        """Currently-set raw bits across byte 0/1 (for --debug), as byte*8+bit."""
+        rep = self._last
+        out = []
+        for byte in (0, 1):
+            if byte < len(rep):
+                for bit in range(8):
+                    if rep[byte] & (1 << bit):
+                        out.append(byte * 8 + bit)
+        return out
+
+    def close(self) -> None:
+        if self._dev is not None:
+            try:
+                self._dev.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._dev = None

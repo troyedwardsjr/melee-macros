@@ -51,14 +51,30 @@ def load_config(path: str | os.PathLike) -> AppConfig:
     pipe_path = raw.get("pipe_path") or str(default_pipe_path())
 
     cdata = raw.get("controller", {}) or {}
+    driver = cdata.get("driver", "sdl")
+    raw_buttons = cdata.get("buttons") or {}
+    if driver == "hid_gc":
+        # Keys are "byte.bit" strings; keep them as strings for HidGcReader.
+        buttons = {str(k): v for k, v in raw_buttons.items()}
+        # hid_gc axes are HID report byte indices, not SDL axis indices, so the
+        # SDL defaults don't apply — take exactly what config provides.
+        axes = dict(cdata.get("axes") or {})
+    else:
+        buttons = {int(k): v for k, v in raw_buttons.items()}
+        axes = {**ControllerMap().axes, **(cdata.get("axes") or {})}
     cmap = ControllerMap(
         index=cdata.get("index", 0),
         deadzone=cdata.get("deadzone", 0.15),
-        axes={**ControllerMap().axes, **(cdata.get("axes") or {})},
-        buttons={int(k): v for k, v in (cdata.get("buttons") or {}).items()},
+        driver=driver,
+        axes=axes,
+        buttons=buttons,
         invert={**ControllerMap().invert, **(cdata.get("invert") or {})},
         trigger_min=cdata.get("trigger_min", -1.0),
         trigger_max=cdata.get("trigger_max", 1.0),
+        hid_vendor=int(cdata.get("hid_vendor", 0x0079)),
+        hid_product=int(cdata.get("hid_product", 0)),
+        hid_interface=int(cdata.get("hid_interface", 0)),
+        hat_byte=int(cdata.get("hat_byte", 8)),
     )
 
     triggers: list[TriggerBinding] = []

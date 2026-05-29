@@ -8,6 +8,9 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
     "pygame>=2.6.1",
     "PyYAML>=6.0",
+    # Raw-HID reader for the Mayflash GameCube adapter, which SDL/pygame cannot
+    # parse on macOS (enumerates with 0 axes/0 buttons). See HidGcReader.
+    "hidapi>=0.14",
 ]
 
 [project.optional-dependencies]

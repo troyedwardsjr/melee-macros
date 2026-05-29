@@ -37,51 +37,52 @@ libmelee:
   port: 1
 
 # --- physical controller ----------------------------------------------------
-# Index/axis/button numbers differ per pad. The values below are a best-guess
-# for the *Xbox One S Controller* detected on this machine (6 axes, 15 buttons,
-# 0 hats -> D-pad arrives as BUTTONS, not a hat). VERIFY each one with
-# `uv run python run.py probe` and adjust — exact indices vary by OS / driver /
-# Bluetooth-vs-USB. Logical names: the GC buttons A B X Y Z L R START D_UP
-# D_DOWN D_LEFT D_RIGHT pass through to the game; MOD is a macro-only modifier.
+# Real Nintendo GameCube controller via a Mayflash adapter (PC/DInput mode).
+# SDL/pygame CANNOT read this adapter on macOS (it enumerates with 0 axes /
+# 0 buttons), so we read its raw HID reports directly (driver: hid_gc). Use
+# driver "sdl" for a normal pad (Xbox/Switch Pro/etc.). Calibrated values below
+# come from `uv run --with hidapi python hidprobe.py`. Logical names: the GC
+# buttons A B X Y Z L R START D_UP D_DOWN D_LEFT D_RIGHT pass through to the
+# game; MOD is a macro-only modifier (never sent to the game).
 controller:
-  index: 0
+  driver: hid_gc
+  hid_vendor: 0x0079    # Mayflash adapter in PC mode (DragonRise). 0x057E = Wii U mode.
+  hid_interface: 0      # which adapter PORT your controller is plugged into (0-3)
   deadzone: 0.15
-  trigger_min: -1.0     # SDL trigger axis value at rest (Xbox triggers rest at -1)
-  trigger_max: 1.0      # SDL trigger axis value fully pressed
-  axes:                 # likely Xbox layout: 0/1 = left stick, 2/3 = right stick, 4/5 = triggers
-    main_x: 0
-    main_y: 1
-    c_x: 2
-    c_y: 3
-    l_trigger: 4
-    r_trigger: 5
+  # HID report BYTE index per axis. Stick bytes rest at 0x80 (center); trigger
+  # bytes rest at 0x00. Rest report: 00 00 80 80 80 80 00 00 08.
+  axes:
+    main_x: 2
+    main_y: 3
+    c_x: 5
+    c_y: 4
+    l_trigger: 6
+    r_trigger: 7
   invert:
-    main_y: true        # SDL reports stick up as negative; flip to pipe (up = 1.0)
+    main_y: true        # stick UP reads low; flip so up = 1.0 (pipe convention)
     c_y: true
-  buttons:              # SDL button index -> logical name (PowerA GC-style, standard SDL layout)
-    0: A
-    1: B
-    2: X
-    3: Y
-    6: START            # the "+" button. (Was wrongly on 7 = LEFT-STICK CLICK, which
-                        #  passed through as START and paused the game mid-move.)
-    10: MOD             # right bumper = macro-only modifier (confirmed: raw button 10)
-    11: D_UP            # D-pad arrives as buttons 11-14 (confirmed 12/13/14)
-    12: D_DOWN
-    13: D_LEFT
-    14: D_RIGHT
-    # Note: button 5 (was guessed as Z) is the Home/Guide button, not Z — removed.
-    # Z (grab) is produced by macros via the pipe regardless; if you want a
-    # physical grab button, run `run.py probe`, press your Z, and map its index.
+  # "byte.bit" -> logical GameCube button (calibrated).
+  buttons:
+    "0.1": A
+    "0.2": B
+    "0.0": X
+    "0.3": Y
+    "0.7": MOD          # Z button is the macro modifier (never sent to the game).
+                        #  A GameCube controller has no spare button, so Z was
+                        #  chosen as MOD; physical grab is replaced by the
+                        #  MOD+A "jc_grab" macro. To get raw Z/grab back, change
+                        #  this to "0.7": Z (and pick another button for MOD).
+    "1.1": START
+  hat_byte: 8           # D-pad hat nibble (low nibble of byte 8; 8 = neutral)
 
 # --- triggers ---------------------------------------------------------------
 # Each entry fires its macro on the rising edge of its condition. A condition is
 # any mix of held buttons (`buttons:`/`hold:`) and an optional main-stick
 # direction (`stick: left|right|up|down`). More-specific bindings win, so
-# "MOD + stick" beats a bare D-pad press. MOD = the right bumper (a macro-only
-# modifier, never sent to the game).
+# "MOD + stick" beats a bare D-pad press. MOD = the Z button (a macro-only
+# modifier, never sent to the game — see the controller buttons map above).
 triggers:
-  # bank 1: MOD (right bumper) + LEFT-STICK DIRECTION — movement & approach
+  # bank 1: MOD (hold Z) + MAIN-STICK DIRECTION — movement & approach
   #   left/right = wavedash; up = jump-in aerial; down = drill pressure.
   #   (shine & firefox dropped here — you hit those clean by hand.)
   - { hold: MOD, stick: right, macro: wavedash_forward }
@@ -89,16 +90,19 @@ triggers:
   - { hold: MOD, stick: up,    macro: shffl_nair }     # "quick jump + kick" approach
   - { hold: MOD, stick: down,  macro: drillshine }      # SH dair -> shine pressure
 
-  # bank 2: MOD (right bumper) + face/Z button — shine game, kills, grab
+  # bank 2: MOD (hold Z) + face button — shine game, kills, grab
   - { buttons: [MOD, A], macro: jc_grab }               # standing JC grab
   - { buttons: [MOD, B], macro: multishine }            # 6-shine string
   - { buttons: [MOD, X], macro: shffl_fair }            # spacing / kill aerial
   - { buttons: [MOD, Y], macro: waveshine_forward }     # shine -> wavedash pressure
-  # `requires: shielding` only fires this if you're actually in shield (libmelee
-  # mode); in pipe mode the gate is ignored and it fires on the button alone.
-  - { buttons: [MOD, Z], macro: shine_oos, requires: shielding }   # out-of-shield shine punish
+  # shine_oos (out-of-shield shine punish) used to live on MOD+Z, but Z is now
+  # MOD itself, so that combo is gone. It's an easy hand tech (jump OOS + shine),
+  # so it's unbound. To rebind it, give it a free combo, e.g.:
+  #   - { buttons: [MOD, A], stick: down, macro: shine_oos, requires: shielding }
+  # (MOD+A+down beats MOD+A=jc_grab by specificity). Avoid MOD+START: if the
+  # `requires` gate fails, START leaks through and PAUSES the game.
 
-  # bank 3: MOD (right bumper) + D-PAD — kills, juggles, recovery
+  # bank 3: MOD (hold Z) + D-PAD — kills, juggles, recovery
   - { buttons: [MOD, D_UP],    macro: upthrow_uair, requires: holding_grab }  # grab -> uair kill confirm
   - { buttons: [MOD, D_DOWN],  macro: shffl_dair }          # drill (no auto-shine)
   - { buttons: [MOD, D_LEFT],  macro: ledgedash_stage_left }
