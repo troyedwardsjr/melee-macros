@@ -74,6 +74,14 @@ controller:
                         #  this to "0.7": Z (and pick another button for MOD).
     "1.1": START
   hat_byte: 8           # D-pad hat nibble (low nibble of byte 8; 8 = neutral)
+  # LEFT TRIGGER as a SECOND modifier. You shield with the RIGHT trigger, and
+  # the adapter's L is just a clone of R, so we repurpose L: a soft press past
+  # l_mod_threshold (0..1 of the analog pull) becomes the macro-only button
+  # "L_MOD" (never sent to the game), and its analog value is zeroed so it
+  # won't airdodge/shield. This gives you a whole second bank of macros
+  # (see the L_MOD triggers below) without losing R-shield.
+  l_mod_name: L_MOD
+  l_mod_threshold: 0.3
 
 # --- triggers ---------------------------------------------------------------
 # Each entry fires its macro on the rising edge of its condition. A condition is
@@ -107,6 +115,36 @@ triggers:
   - { buttons: [MOD, D_DOWN],  macro: shffl_dair }          # drill (no auto-shine)
   - { buttons: [MOD, D_LEFT],  macro: ledgedash_stage_left }
   - { buttons: [MOD, D_RIGHT], macro: ledgedash_stage_right }
+
+  # ===========================================================================
+  # LEFT-TRIGGER (L_MOD) BANK — a second moveset: lasers, movement & recovery.
+  # Hold the LEFT trigger (soft press is enough; see l_mod_name above). L_MOD is
+  # a different "shift key" from MOD(Z), so none of these conflict with the Z
+  # bank above. Mnemonic: Z = pressure/shine/kills, L = neutral/movement/laser.
+  # ===========================================================================
+
+  # bank 4: L_MOD + MAIN-STICK DIRECTION — SHORT-HOP LASERS ("jump + shoot")
+  #   This is the move you asked for: jump and blaster nearly together, fired
+  #   on the first airborne frame so the laser stays low, then fast-fall.
+  - { hold: L_MOD, stick: up,    macro: shl }            # neutral SHL (hop straight up + laser)
+  - { hold: L_MOD, stick: right, macro: shl_approach }   # drift-forward SHL (approach)
+  - { hold: L_MOD, stick: left,  macro: shl_retreat }    # drift-back SHL (retreat/space)
+  - { hold: L_MOD, stick: down,  macro: shl_double }      # double laser (one full hop, two shots)
+
+  # bank 5: L_MOD + face button — MOVEMENT TECH (the hard-to-time-by-hand stuff)
+  - { buttons: [L_MOD, A], macro: moonwalk_right }
+  - { buttons: [L_MOD, B], macro: moonwalk_left }
+  - { buttons: [L_MOD, X], macro: pivot_right }
+  - { buttons: [L_MOD, Y], macro: pivot_left }
+
+  # bank 6: L_MOD + D-PAD — PUNISH & PRESSURE (Fox's bread-and-butter, OOS +
+  # the key aerials). Firefox/recovery lived here before; swapped out because
+  # you've got recovery covered. These four are competitive staples that aren't
+  # bound anywhere else (the Z bank only has nair/fair/dair + forward waveshine).
+  - { buttons: [L_MOD, D_UP],    macro: shffl_uair }                      # juggle / vertical-kill up-air
+  - { buttons: [L_MOD, D_DOWN],  macro: shine_oos, requires: shielding }  # out-of-shield shine — the premier OOS punish
+  - { buttons: [L_MOD, D_LEFT],  macro: shffl_bair }                      # spacing / edgeguard / kill back-air
+  - { buttons: [L_MOD, D_RIGHT], macro: waveshine_back }                  # retreating waveshine (pairs with MOD+Y forward)
 
   # --- EDGEGUARDS (optional) -------------------------------------------------
   # All banks above are full, so these are commented out — uncomment and pick

@@ -75,6 +75,8 @@ def load_config(path: str | os.PathLike) -> AppConfig:
         hid_product=int(cdata.get("hid_product", 0)),
         hid_interface=int(cdata.get("hid_interface", 0)),
         hat_byte=int(cdata.get("hat_byte", 8)),
+        l_mod_name=str(cdata.get("l_mod_name", "") or ""),
+        l_mod_threshold=float(cdata.get("l_mod_threshold", 0.3)),
     )
 
     triggers: list[TriggerBinding] = []

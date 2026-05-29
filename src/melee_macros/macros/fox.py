@@ -217,6 +217,38 @@ def _shffl(name: str, aerial: str, facing_right: bool = True) -> MacroBuilder:
     return b.pad_to(18)
 
 
+def _shl(name: str, *, drift_x: float = 0.0, double: bool = False) -> MacroBuilder:
+    """Short-hop laser ("jump and shoot") — the Fox neutral staple.
+
+    Competitive inputs: jump with **X** (so the thumb can roll X -> B), then
+    fire the blaster (**B**) on the first airborne frame. Pressing jump and B
+    almost together buffers the laser out of jumpsquat so the aerial shot comes
+    out low to the ground; then fast-fall to land quickly. `drift_x` slides the
+    hop forward/back (approach/retreat); `double` uses a full hop and fires two
+    lasers. STATE-DEPENDENT-ish: laser height depends on exact fast-fall timing.
+    """
+    kind = "Double laser" if double else "Short-hop laser"
+    where = "forward" if drift_x > 0 else "back" if drift_x < 0 else "neutral"
+    b = MacroBuilder(
+        name,
+        f"{kind} ({where}): jump (X), blaster (B) on the first airborne frame "
+        f"(jump+B nearly together), {'2nd shot mid-air, ' if double else ''}"
+        "then fast-fall. Laser stays low.",
+    )
+    if double:
+        b.hold("Y", 0, 4)  # full hop for the airtime to land two shots
+    else:
+        b.tap("X", 0, dur=1)  # short hop (X frees the thumb to roll onto B)
+    if drift_x:
+        b.main(drift_x, 0.0, 0, AIRBORNE + 3)  # drift the hop
+    b.tap("B", AIRBORNE, dur=1)  # first laser, buffered out of jumpsquat
+    if double:
+        b.tap("B", AIRBORNE + 8, dur=1)  # second laser
+    ff = AIRBORNE + (12 if double else 5)
+    b.main(0.0, -1.0, ff, ff + 8)  # fast-fall straight down to land low
+    return b.pad_to(ff + 8)
+
+
 def _drillshine(facing_right: bool = True) -> MacroBuilder:
     """Dair -> shine on landing, then JC out (research aerials §8.4). STATE-DEPENDENT."""
     b = MacroBuilder("drillshine", "Drillshine: SH dair, FF, L-cancel, shine on landing, JC. STATE-DEPENDENT.")
@@ -408,6 +440,11 @@ def register_fox_macros(lib: MacroLibrary) -> None:
         _shffl("shffl_dair", "dair"),
         _drillshine(),
         _upthrow_uair(),
+        # short-hop lasers ("jump and shoot")
+        _shl("shl"),
+        _shl("shl_approach", drift_x=0.85),
+        _shl("shl_retreat", drift_x=-0.85),
+        _shl("shl_double", double=True),
         # defense / tech
         _tech("tech_in_place", None),
         _tech("tech_roll_left", (-1.0, 0.0)),

@@ -49,6 +49,13 @@ class ControllerMap:
     hid_product: int = 0       # 0 = any product for that vendor
     hid_interface: int = 0     # which adapter PORT (interface_number) to read
     hat_byte: int = 8          # report byte holding the D-pad hat nibble
+    # Treat the analog L trigger as a SECOND macro modifier. When the L value
+    # exceeds `l_mod_threshold`, emit the logical button `l_mod_name` (a
+    # macro-only modifier — give it a name NOT in DIGITAL_BUTTONS so it never
+    # reaches the game) and zero the analog L passthrough so the soft press
+    # can't trigger shield/airdodge in-game. "" disables this.
+    l_mod_name: str = ""
+    l_mod_threshold: float = 0.3
 
 
 @dataclass
@@ -304,6 +311,15 @@ class HidGcReader:
             if byte < len(rep) and (rep[byte] & mask):
                 pressed.add(name)
 
+        l = trig("l_trigger")
+        r = trig("r_trigger")
+        # Analog L doubling as a held macro modifier: past the threshold it
+        # becomes the logical L_MOD button and its analog value is suppressed
+        # (so it won't shield/airdodge while you use it to trigger a macro).
+        if self.map.l_mod_name and l >= self.map.l_mod_threshold:
+            pressed.add(self.map.l_mod_name)
+            l = 0.0
+
         # D-pad via the hat nibble.
         if self.map.hat_byte < len(rep):
             dx, dy = _HAT_DIRS.get(rep[self.map.hat_byte] & 0x0F, (0, 0))
@@ -316,9 +332,7 @@ class HidGcReader:
             elif dy < 0:
                 pressed.add("D_DOWN")
 
-        return PhysicalState(
-            buttons=frozenset(pressed), main=main, c=c, l=trig("l_trigger"), r=trig("r_trigger")
-        )
+        return PhysicalState(buttons=frozenset(pressed), main=main, c=c, l=l, r=r)
 
     def raw_buttons(self) -> list[int]:
         """Currently-set raw bits across byte 0/1 (for --debug), as byte*8+bit."""
