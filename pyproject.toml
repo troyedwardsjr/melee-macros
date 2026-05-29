@@ -1,0 +1,20 @@
+[project]
+name = "melee-macros"
+version = "0.1.0"
+description = "One-button competitive Fox tech for Slippi/Dolphin"
+readme = "README.md"
+# pygame has no wheels for 3.14 yet; pin to a supported range.
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pygame>=2.6.1",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Frame-accurate backend. Install with: uv sync --extra libmelee
+libmelee = ["melee>=0.38.0"]
+
+[tool.uv]
+# This is an application driven via run.py (which manages sys.path), not an
+# installable library — just let uv manage the environment.
+package = false

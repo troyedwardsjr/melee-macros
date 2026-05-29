@@ -1,0 +1,119 @@
+# Fox macro system configuration.
+#
+# This program is the SOLE input source Dolphin sees: set your Dolphin GCN port
+# to the pipe device (Controllers -> Port 1 -> "Standard Controller" config ->
+# device dropdown -> Pipe/0/<name>). Your physical pad is read here via SDL and
+# passed through, except when a trigger fires a macro.
+
+# --- output -----------------------------------------------------------------
+# Leave pipe_path blank to auto-detect the Slippi/Dolphin Pipes dir on macOS.
+# Detected on this machine: the Slippi Launcher netplay Dolphin user dir.
+pipe_path: "~/Library/Application Support/com.project-slippi.dolphin/netplay/User/Pipes/slippibot"
+fps: 60
+backend: libmelee       # "pipe" (wall-clock) or "libmelee" (frame-accurate)
+passthrough: true       # forward physical inputs when no macro is active
+
+# --- closed-loop / state reading --------------------------------------------
+# These only have teeth with `backend: libmelee` (install it: `uv sync --extra
+# libmelee`). In pipe mode there is no game state, so macros use fixed timing
+# and every `requires:` gate below is best-effort allowed (nothing is blocked).
+#   reactive: prefer state-aware macros (real-landing L-cancel, wavedash that
+#             waits for the airborne frame) over fixed timelines when state is
+#             available. Harmless to leave on in pipe mode.
+#   reactive_edgeguard: let the engine READ THE OPPONENT and auto-pick an
+#             edgeguard (autopilot / bot-like). Off by default — opt in only if
+#             you want the program making reads for you.
+reactive: true
+reactive_edgeguard: true
+
+# Frame-accurate backend (only used when backend: libmelee). Requires `pip install melee`.
+# Paths below were detected from your Slippi Launcher settings.
+libmelee:
+  dolphin_path: "~/Library/Application Support/Slippi Launcher/netplay"   # contains "Slippi Dolphin.app"
+  iso_path: "/Volumes/Crucial X10/CrossOver/ROMS/Super Smash Bros. Melee (USA) (EnJa) (Rev 2)/Super Smash Bros. Melee (USA) (En,Ja) (Rev 2).iso"
+  port: 1
+
+# --- physical controller ----------------------------------------------------
+# Index/axis/button numbers differ per pad. The values below are a best-guess
+# for the *Xbox One S Controller* detected on this machine (6 axes, 15 buttons,
+# 0 hats -> D-pad arrives as BUTTONS, not a hat). VERIFY each one with
+# `uv run python run.py probe` and adjust — exact indices vary by OS / driver /
+# Bluetooth-vs-USB. Logical names: the GC buttons A B X Y Z L R START D_UP
+# D_DOWN D_LEFT D_RIGHT pass through to the game; MOD is a macro-only modifier.
+controller:
+  index: 0
+  deadzone: 0.15
+  trigger_min: -1.0     # SDL trigger axis value at rest (Xbox triggers rest at -1)
+  trigger_max: 1.0      # SDL trigger axis value fully pressed
+  axes:                 # likely Xbox layout: 0/1 = left stick, 2/3 = right stick, 4/5 = triggers
+    main_x: 0
+    main_y: 1
+    c_x: 2
+    c_y: 3
+    l_trigger: 4
+    r_trigger: 5
+  invert:
+    main_y: true        # SDL reports stick up as negative; flip to pipe (up = 1.0)
+    c_y: true
+  buttons:              # SDL button index -> logical name (PowerA GC-style, standard SDL layout)
+    0: A
+    1: B
+    2: X
+    3: Y
+    6: START            # the "+" button. (Was wrongly on 7 = LEFT-STICK CLICK, which
+                        #  passed through as START and paused the game mid-move.)
+    10: MOD             # right bumper = macro-only modifier (confirmed: raw button 10)
+    11: D_UP            # D-pad arrives as buttons 11-14 (confirmed 12/13/14)
+    12: D_DOWN
+    13: D_LEFT
+    14: D_RIGHT
+    # Note: button 5 (was guessed as Z) is the Home/Guide button, not Z — removed.
+    # Z (grab) is produced by macros via the pipe regardless; if you want a
+    # physical grab button, run `run.py probe`, press your Z, and map its index.
+
+# --- triggers ---------------------------------------------------------------
+# Each entry fires its macro on the rising edge of its condition. A condition is
+# any mix of held buttons (`buttons:`/`hold:`) and an optional main-stick
+# direction (`stick: left|right|up|down`). More-specific bindings win, so
+# "MOD + stick" beats a bare D-pad press. MOD = the right bumper (a macro-only
+# modifier, never sent to the game).
+triggers:
+  # bank 1: MOD (right bumper) + LEFT-STICK DIRECTION — movement & approach
+  #   left/right = wavedash; up = jump-in aerial; down = drill pressure.
+  #   (shine & firefox dropped here — you hit those clean by hand.)
+  - { hold: MOD, stick: right, macro: wavedash_forward }
+  - { hold: MOD, stick: left,  macro: wavedash_back }
+  - { hold: MOD, stick: up,    macro: shffl_nair }     # "quick jump + kick" approach
+  - { hold: MOD, stick: down,  macro: drillshine }      # SH dair -> shine pressure
+
+  # bank 2: MOD (right bumper) + face/Z button — shine game, kills, grab
+  - { buttons: [MOD, A], macro: jc_grab }               # standing JC grab
+  - { buttons: [MOD, B], macro: multishine }            # 6-shine string
+  - { buttons: [MOD, X], macro: shffl_fair }            # spacing / kill aerial
+  - { buttons: [MOD, Y], macro: waveshine_forward }     # shine -> wavedash pressure
+  # `requires: shielding` only fires this if you're actually in shield (libmelee
+  # mode); in pipe mode the gate is ignored and it fires on the button alone.
+  - { buttons: [MOD, Z], macro: shine_oos, requires: shielding }   # out-of-shield shine punish
+
+  # bank 3: MOD (right bumper) + D-PAD — kills, juggles, recovery
+  - { buttons: [MOD, D_UP],    macro: upthrow_uair, requires: holding_grab }  # grab -> uair kill confirm
+  - { buttons: [MOD, D_DOWN],  macro: shffl_dair }          # drill (no auto-shine)
+  - { buttons: [MOD, D_LEFT],  macro: ledgedash_stage_left }
+  - { buttons: [MOD, D_RIGHT], macro: ledgedash_stage_right }
+
+  # --- EDGEGUARDS (optional) -------------------------------------------------
+  # All banks above are full, so these are commented out — uncomment and pick
+  # physical inputs you have free (or replace a binding above). The aimable ones
+  # work in BOTH pipe and libmelee mode (you aim yourself). The reactive one
+  # needs `backend: libmelee` AND `reactive_edgeguard: true` (it reads the
+  # opponent and acts on its own).
+  #
+  #   Aimable / fixed (you position next to the ledge, then fire):
+  # - { buttons: [MOD, B], stick: right, macro: offstage_bair_right }  # ex: needs a free input
+  # - { buttons: [MOD, B], stick: left,  macro: offstage_bair_left }
+  # - { ..., macro: offstage_dair_right }   # SH dair spike straight down
+  # - { ..., macro: ledgehog_right }        # walk off to grab the ledge (deny recovery)
+  # - { ..., macro: shine_spike_right }     # HIGH RISK: hop out, shine-spike, firefox back
+  #
+  #   Reactive autopilot (reads opponent; only with libmelee + reactive_edgeguard:true):
+  # - { ..., macro: reactive_edgeguard }

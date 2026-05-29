@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environment (managed by uv via pyproject.toml + uv.lock)
+.venv/
+
+# Tooling / local state
+.agentloop/
+
+# OS
+.DS_Store

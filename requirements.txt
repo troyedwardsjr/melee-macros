@@ -1,0 +1,8 @@
+# Core runtime
+pygame>=2.1          # SDL controller reading (GameCube adapter, Switch, Xbox, DS4, generic)
+PyYAML>=6.0          # config.yaml
+
+# Optional: frame-accurate backend (game-stepped input timing).
+# Install separately if you want libmelee mode:
+#   pip install melee
+# melee>=0.38.0
