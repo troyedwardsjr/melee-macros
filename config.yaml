@@ -113,11 +113,14 @@ triggers:
   # bank 3: MOD (hold Z) + D-PAD — kills, juggles, recovery
   - { buttons: [MOD, D_UP],    macro: upthrow_uair, requires: holding_grab }  # grab -> uair kill confirm
   - { buttons: [MOD, D_DOWN],  macro: shffl_dair }          # drill (no auto-shine)
-  # Max-intangibility ledgedash (inserts a JC-shine; research §8.7). The plain
-  # `ledgedash_stage_left/right` macros still exist in the library if you want
-  # the faster/simpler version back — just swap the names here.
-  - { buttons: [MOD, D_LEFT],  macro: ledgedash_jcshine_left }
-  - { buttons: [MOD, D_RIGHT], macro: ledgedash_jcshine_right }
+  # Ledgehog: walk off and grab the ledge to deny the opponent's recovery
+  # (occupies the ledge so they can't sweetspot). *_left/_right name the ledge
+  # you're hogging. This is the highest-EV "free" edgeguard vs poor recoveries.
+  # (Ledgedash is just an analog-stick airdodge you can already do by hand, so
+  # the `ledgedash_*` macros are unbound — they remain in the library if you
+  # ever want them back; just swap the macro names here.)
+  - { buttons: [MOD, D_LEFT],  macro: ledgehog_left }   # hog the left ledge
+  - { buttons: [MOD, D_RIGHT], macro: ledgehog_right }  # hog the right ledge
 
   # ===========================================================================
   # LEFT-TRIGGER (L_MOD) BANK — a second moveset: lasers, movement & recovery.
