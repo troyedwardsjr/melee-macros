@@ -100,7 +100,7 @@ triggers:
 
   # bank 2: MOD (hold Z) + face button — shine game, kills, grab
   - { buttons: [MOD, A], macro: jc_grab }               # standing JC grab
-  - { buttons: [MOD, B], macro: multishine }            # 6-shine string
+  - { buttons: [MOD, B], macro: jc_shine }              # jump-cancel shine (the match building block)
   - { buttons: [MOD, X], macro: shffl_fair }            # spacing / kill aerial
   - { buttons: [MOD, Y], macro: waveshine_forward }     # shine -> wavedash pressure
   # shine_oos (out-of-shield shine punish) used to live on MOD+Z, but Z is now
@@ -131,11 +131,15 @@ triggers:
   - { hold: L_MOD, stick: left,  macro: shl_retreat }    # drift-back SHL (retreat/space)
   - { hold: L_MOD, stick: down,  macro: shl_double }      # double laser (one full hop, two shots)
 
-  # bank 5: L_MOD + face button — MOVEMENT TECH (the hard-to-time-by-hand stuff)
-  - { buttons: [L_MOD, A], macro: moonwalk_right }
-  - { buttons: [L_MOD, B], macro: moonwalk_left }
-  - { buttons: [L_MOD, X], macro: pivot_right }
-  - { buttons: [L_MOD, Y], macro: pivot_left }
+  # bank 5: L_MOD + face button — MANUAL EDGEGUARDS (Fox's #1 stock-taker).
+  # Position yourself at/near the ledge, then fire. *_left/_right name the ledge
+  # you're guarding. A/B = bair pair, X/Y = dair (spike) pair. These are the
+  # manual override for the reactive_edgeguard autopilot (which reads the
+  # opponent for you when live state is connected).
+  - { buttons: [L_MOD, A], macro: offstage_bair_left }    # bair the left ledge
+  - { buttons: [L_MOD, B], macro: offstage_bair_right }   # bair the right ledge
+  - { buttons: [L_MOD, X], macro: offstage_dair_left }    # dair spike, left ledge
+  - { buttons: [L_MOD, Y], macro: offstage_dair_right }   # dair spike, right ledge
 
   # bank 6: L_MOD + D-PAD — PUNISH & PRESSURE (Fox's bread-and-butter, OOS +
   # the key aerials). Firefox/recovery lived here before; swapped out because
