@@ -100,7 +100,7 @@ triggers:
 
   # bank 2: MOD (hold Z) + face button — shine game, kills, grab
   - { buttons: [MOD, A], macro: jc_grab }               # standing JC grab
-  - { buttons: [MOD, B], macro: jc_shine }              # jump-cancel shine (the match building block)
+  - { buttons: [MOD, B], macro: multishine }            # multishine (shine/jump on a 6f period)
   - { buttons: [MOD, X], macro: shffl_fair }            # spacing / kill aerial
   - { buttons: [MOD, Y], macro: waveshine_forward }     # shine -> wavedash pressure
   # shine_oos (out-of-shield shine punish) used to live on MOD+Z, but Z is now
