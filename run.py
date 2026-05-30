@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -180,6 +181,36 @@ def cmd_run(args) -> int:
     from melee_macros.engine import Engine
 
     cfg = load_config(args.config or default_config_path())
+
+    # --pipe overrides where we write inputs. Use this for slippi-ai (and any
+    # libmelee-launched Dolphin): it spawns Dolphin from a THROWAWAY COPY of the
+    # Slippi user dir under /tmp/libmelee_*/User, so its pipe is there — NOT in
+    # the real Slippi user dir config.yaml points at. `--pipe auto` finds that
+    # temp pipe for you; `--pipe PATH` points at an explicit FIFO.
+    if args.pipe:
+        if args.pipe == "auto":
+            from melee_macros.pipe import find_libmelee_pipe
+
+            found = find_libmelee_pipe()
+            if found is None:
+                print(
+                    "error: --pipe auto found no libmelee_* temp pipe. Start "
+                    "slippi-ai (so it launches Dolphin) first, then run this.",
+                    file=sys.stderr,
+                )
+                return 1
+            cfg.pipe_path = str(found)
+            print(f"[pipe] auto-located libmelee pipe: {found}")
+        else:
+            cfg.pipe_path = os.path.expanduser(args.pipe)
+            print(f"[pipe] using override pipe: {cfg.pipe_path}")
+        # slippi-ai already owns/launches the game, so the hybrid state mirror
+        # (which tries to attach to the default Slippi Dolphin) won't find it —
+        # drop to plain pipe output to avoid a pointless connect attempt.
+        if cfg.backend == "hybrid":
+            print("[pipe] override active: using 'pipe' backend (no state mirror).")
+            cfg.backend = "pipe"
+
     lib = build_fox_library()
     unknown = [t.macro for t in cfg.triggers if t.macro not in lib]
     if unknown:
@@ -237,6 +268,13 @@ def main() -> int:
     pr.set_defaults(func=cmd_probe)
     r = sub.add_parser("run", help="start the live engine")
     r.add_argument("--config", default=None)
+    r.add_argument(
+        "--pipe",
+        default=None,
+        metavar="PATH|auto",
+        help="override the output pipe. 'auto' locates the newest libmelee_* "
+        "temp pipe (for slippi-ai); or pass an explicit FIFO path.",
+    )
     r.add_argument("--debug", action="store_true", help="print raw button indices / stick on every input change")
     r.set_defaults(func=cmd_run)
     args = p.parse_args()

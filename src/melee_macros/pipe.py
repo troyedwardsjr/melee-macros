@@ -22,7 +22,10 @@ the commands that changed, which is how libmelee drives the same pipe.
 from __future__ import annotations
 
 import os
+import stat
+import tempfile
 from pathlib import Path
+from typing import Optional
 
 from .inputs import DIGITAL_BUTTONS, NEUTRAL_STATE, ControllerState
 
@@ -42,6 +45,40 @@ def default_pipe_path(name: str = "slippibot") -> Path:
             return base_dir / "Pipes" / name
     # Fall back to the first (Slippi) path; caller/open() will create the dir.
     return Path(os.path.expanduser(_MAC_USER_DIRS[0])) / "Pipes" / name
+
+
+def find_libmelee_pipe(name_prefix: str = "slippibot") -> Optional[Path]:
+    """Locate the pipe FIFO inside the newest ``libmelee_*`` temp home dir.
+
+    slippi-ai / libmelee launch Dolphin from a throwaway COPY of the Slippi
+    user dir at ``<tmp>/libmelee_XXXXXX/User`` (``tmp_home_directory=True``),
+    so its pipe lives at ``<tmp>/libmelee_XXXXXX/User/Pipes/slippibot<port>``,
+    NOT in the real Slippi user dir we write to by default. That mismatch is
+    why injection works against the official Slippi Dolphin but not against the
+    Dolphin slippi-ai spawns.
+
+    Scan the system temp dir for ``libmelee_*`` homes and return the most
+    recently created matching FIFO, or ``None`` if slippi-ai/Dolphin isn't
+    currently running (no such pipe exists yet).
+    """
+    tmp = Path(tempfile.gettempdir())
+    candidates: list[Path] = []
+    for home in tmp.glob("libmelee_*"):
+        pipes_dir = home / "User" / "Pipes"
+        if not pipes_dir.is_dir():
+            continue
+        for p in pipes_dir.iterdir():
+            if not p.name.startswith(name_prefix):
+                continue
+            try:
+                if stat.S_ISFIFO(p.stat().st_mode):
+                    candidates.append(p)
+            except OSError:
+                continue
+    if not candidates:
+        return None
+    # Newest by mtime — the live session's pipe.
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 class DolphinPipe:
