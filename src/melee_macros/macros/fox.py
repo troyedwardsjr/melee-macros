@@ -239,12 +239,17 @@ def _shl(name: str, *, drift_x: float = 0.0, double: bool = False) -> MacroBuild
         b.hold("Y", 0, 4)  # full hop for the airtime to land two shots
     else:
         b.tap("X", 0, dur=1)  # short hop (X frees the thumb to roll onto B)
+    ff = AIRBORNE + (12 if double else 5)
     if drift_x:
-        b.main(drift_x, 0.0, 0, AIRBORNE + 3)  # drift the hop
+        # Drift only AFTER leaving the ground. Deflecting the stick on the jump
+        # frame races the X press under open-loop pipe timing, so the game reads
+        # a grounded side-tilt and Fox DASHES instead of hopping. Holding the
+        # stick neutral through jumpsquat and drifting in the air fixes that
+        # while still carrying Fox forward/back for the approach/retreat.
+        b.main(drift_x, 0.0, AIRBORNE, ff)
     b.tap("B", AIRBORNE, dur=1)  # first laser, buffered out of jumpsquat
     if double:
         b.tap("B", AIRBORNE + 8, dur=1)  # second laser
-    ff = AIRBORNE + (12 if double else 5)
     b.main(0.0, -1.0, ff, ff + 8)  # fast-fall straight down to land low
     return b.pad_to(ff + 8)
 
