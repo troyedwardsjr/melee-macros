@@ -47,19 +47,15 @@ def default_pipe_path(name: str = "slippibot") -> Path:
     return Path(os.path.expanduser(_MAC_USER_DIRS[0])) / "Pipes" / name
 
 
-def find_libmelee_pipe(name_prefix: str = "slippibot") -> Optional[Path]:
-    """Locate the pipe FIFO inside the newest ``libmelee_*`` temp home dir.
+def list_libmelee_pipes(name_prefix: str = "slippibot") -> list[Path]:
+    """All libmelee temp-dir pipe FIFOs, newest first.
 
     slippi-ai / libmelee launch Dolphin from a throwaway COPY of the Slippi
     user dir at ``<tmp>/libmelee_XXXXXX/User`` (``tmp_home_directory=True``),
-    so its pipe lives at ``<tmp>/libmelee_XXXXXX/User/Pipes/slippibot<port>``,
+    so its pipes live at ``<tmp>/libmelee_XXXXXX/User/Pipes/slippibot<port>``,
     NOT in the real Slippi user dir we write to by default. That mismatch is
     why injection works against the official Slippi Dolphin but not against the
     Dolphin slippi-ai spawns.
-
-    Scan the system temp dir for ``libmelee_*`` homes and return the most
-    recently created matching FIFO, or ``None`` if slippi-ai/Dolphin isn't
-    currently running (no such pipe exists yet).
     """
     tmp = Path(tempfile.gettempdir())
     candidates: list[Path] = []
@@ -75,10 +71,31 @@ def find_libmelee_pipe(name_prefix: str = "slippibot") -> Optional[Path]:
                     candidates.append(p)
             except OSError:
                 continue
-    if not candidates:
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates
+
+
+def find_libmelee_pipe(
+    name_prefix: str = "slippibot", port: Optional[int] = None
+) -> Optional[Path]:
+    """Locate a libmelee temp-dir pipe FIFO.
+
+    If ``port`` is given, return the pipe named ``slippibot<port>`` exactly
+    (this is the port-pinned form — e.g. your ``--p1.type pipe`` controller is
+    ``slippibot1``, the AI on P2 is ``slippibot2``). Otherwise return the most
+    recently created matching FIFO. Returns ``None`` if no such pipe exists
+    (slippi-ai/Dolphin isn't running yet).
+    """
+    pipes = list_libmelee_pipes(name_prefix)
+    if not pipes:
         return None
-    # Newest by mtime — the live session's pipe.
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    if port is not None:
+        target = f"{name_prefix}{port}"
+        for p in pipes:
+            if p.name == target:
+                return p
+        return None
+    return pipes[0]  # newest
 
 
 class DolphinPipe:

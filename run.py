@@ -188,17 +188,44 @@ def cmd_run(args) -> int:
     # the real Slippi user dir config.yaml points at. `--pipe auto` finds that
     # temp pipe for you; `--pipe PATH` points at an explicit FIFO.
     if args.pipe:
-        if args.pipe == "auto":
-            from melee_macros.pipe import find_libmelee_pipe
+        if args.pipe == "auto" or args.pipe.startswith("auto:"):
+            from melee_macros.pipe import find_libmelee_pipe, list_libmelee_pipes
 
-            found = find_libmelee_pipe()
+            # `auto:N` pins the pipe for port N (e.g. auto:1 -> slippibot1, your
+            # `--p1.type pipe` controller; the AI on P2 is slippibot2). Bare
+            # `auto` takes the newest, but warns if several exist so you don't
+            # silently grab the AI's port.
+            port = None
+            if ":" in args.pipe:
+                try:
+                    port = int(args.pipe.split(":", 1)[1])
+                except ValueError:
+                    print(f"error: bad --pipe value {args.pipe!r}; use auto or auto:N", file=sys.stderr)
+                    return 1
+            all_pipes = list_libmelee_pipes()
+            found = find_libmelee_pipe(port=port)
             if found is None:
+                if port is not None and all_pipes:
+                    print(
+                        f"error: --pipe auto:{port} found no slippibot{port} pipe. "
+                        f"Available: {[p.name for p in all_pipes]}. Did you start "
+                        f"slippi-ai with --p{port}.type pipe?",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        "error: --pipe auto found no libmelee_* temp pipe. Start "
+                        "slippi-ai (so it launches Dolphin) first, then run this.",
+                        file=sys.stderr,
+                    )
+                return 1
+            if port is None and len(all_pipes) > 1:
                 print(
-                    "error: --pipe auto found no libmelee_* temp pipe. Start "
-                    "slippi-ai (so it launches Dolphin) first, then run this.",
+                    f"[pipe] warning: {len(all_pipes)} libmelee pipes present "
+                    f"({[p.name for p in all_pipes]}); picking newest {found.name}. "
+                    f"Use --pipe auto:N to target your port (e.g. auto:1).",
                     file=sys.stderr,
                 )
-                return 1
             cfg.pipe_path = str(found)
             print(f"[pipe] auto-located libmelee pipe: {found}")
         else:
@@ -271,9 +298,11 @@ def main() -> int:
     r.add_argument(
         "--pipe",
         default=None,
-        metavar="PATH|auto",
+        metavar="PATH|auto|auto:N",
         help="override the output pipe. 'auto' locates the newest libmelee_* "
-        "temp pipe (for slippi-ai); or pass an explicit FIFO path.",
+        "temp pipe (for slippi-ai); 'auto:N' pins the pipe for port N "
+        "(e.g. auto:1 for your --p1.type pipe controller); or pass an explicit "
+        "FIFO path.",
     )
     r.add_argument("--debug", action="store_true", help="print raw button indices / stick on every input change")
     r.set_defaults(func=cmd_run)
