@@ -356,6 +356,31 @@ def _ledgedash(name: str, stage_to_right: bool) -> MacroBuilder:
 # ======================================================================
 # EDGEGUARD (aimable / fixed — you position yourself; opponent not read)
 # ======================================================================
+def _ledgedash_jcshine(name: str, stage_to_right: bool) -> MacroBuilder:
+    """High-intangibility ledgedash that inserts a JC-shine to extend the
+    actionable intangible window (research §8.7: from ledge release, jump f2,
+    shine f4, jump f7, then airdodge ~45deg into the stage to waveland).
+    STATE-DEPENDENT (ECB-sensitive) — most reliable in libmelee/hybrid mode."""
+    toward = WL_TOWARD_RIGHT if stage_to_right else WL_TOWARD_LEFT
+    away_x = 1.0 if not stage_to_right else -1.0  # away from stage to release ledge
+    b = MacroBuilder(
+        name,
+        "JC-shine ledgedash: drop ledge, jump back toward stage (f2), shine "
+        "(f4) to extend intangibility, JC the shine with a jump (f7), then "
+        "airdodge ~45deg into the stage to waveland. Max-invincibility "
+        "variant. STATE-DEPENDENT (ECB).",
+    )
+    b.main(away_x, 0.0, 0, 1)        # release ledge        [research f1]
+    b.tap("Y", 1, dur=1)            # jump toward stage    [research f2]
+    b.main(*DOWN, 3, 4)             # shine: stick down    [research f4]
+    b.tap("B", 3, dur=1)            # shine
+    b.tap("Y", 6, dur=1)            # JC the shine         [research f7]
+    air = 6 + AIRBORNE             # airborne after the JC jump
+    b.main(toward[0], toward[1], air, air + 3)  # angle into stage
+    b.tap("L", air + 1, dur=2)      # airdodge to waveland
+    return b.pad_to(air + 4)
+
+
 def _ledgehog(name: str, right: bool) -> MacroBuilder:
     """Walk off the edge to grab the ledge and deny the opponent's recovery.
     `right` = guarding the right ledge. Position next to the ledge first."""
@@ -464,6 +489,8 @@ def register_fox_macros(lib: MacroLibrary) -> None:
         _illusion("illusion_forward_short", right=True, shorten_frame=20),
         _ledgedash("ledgedash_stage_right", stage_to_right=True),
         _ledgedash("ledgedash_stage_left", stage_to_right=False),
+        _ledgedash_jcshine("ledgedash_jcshine_right", stage_to_right=True),
+        _ledgedash_jcshine("ledgedash_jcshine_left", stage_to_right=False),
         # edgeguard (aimable / fixed — you position; opponent not read)
         _ledgehog("ledgehog_right", right=True),
         _ledgehog("ledgehog_left", right=False),

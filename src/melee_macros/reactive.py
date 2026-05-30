@@ -226,6 +226,40 @@ def _ledgedash(stage_to_right: bool):
     return factory
 
 
+def _ledgedash_jcshine(stage_to_right: bool):
+    """Closed-loop high-intangibility ledgedash: like _ledgedash but inserts a
+    JC-shine (shine -> jump-cancel) to extend the actionable intangible window
+    before the waveland airdodge. Anchored to the real ledge-hang/airborne
+    states so it self-corrects for ECB instead of guessing fixed frames."""
+    toward = _WL_RIGHT if stage_to_right else _WL_LEFT
+    away_x = -1.0 if stage_to_right else 1.0
+
+    def factory(ctx: MacroContext) -> Iterator[ControllerState]:
+        # Wait until we're actually hanging on the ledge.
+        for _ in range(30):
+            v = ctx.view
+            if v is None or v.on_ledge:
+                break
+            yield S()
+        # Drop off (push away from stage), then jump back toward it.
+        yield S(main=(away_x, 0.0))
+        yield S(buttons={"Y"}, main=(toward[0] * 0.4, 0.0))
+        # Shine to extend intangibility, brief gap, then JC the shine.
+        yield S(main=_DOWN, buttons={"B"})
+        yield S()
+        yield S(buttons={"Y"})
+        # Wait until airborne, then airdodge into the stage to waveland.
+        for _ in range(8):
+            v = ctx.view
+            if v is None or v.airborne:
+                break
+            yield S(buttons={"Y"})
+        for _ in range(4):
+            yield S(buttons={"L"}, main=toward)
+
+    return factory
+
+
 # ======================================================================
 # Reactive (bot-like) edgeguard — reads the OPPONENT's state to pick a cover.
 # Gated behind config `reactive_edgeguard: true` because auto-selecting and
@@ -292,6 +326,8 @@ REACTIVE: dict[str, ReactiveFactory] = {
     "drillshine": reactive_drillshine,
     "ledgedash_stage_right": _ledgedash(True),
     "ledgedash_stage_left": _ledgedash(False),
+    "ledgedash_jcshine_right": _ledgedash_jcshine(True),
+    "ledgedash_jcshine_left": _ledgedash_jcshine(False),
     "reactive_edgeguard": reactive_edgeguard,
 }
 
